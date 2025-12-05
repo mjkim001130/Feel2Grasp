@@ -43,5 +43,10 @@ pip install 'lerobot[feetech]'
 
 Following the SO-101 [setup](https://huggingface.co/docs/lerobot/so101)
 
-<details>
-<summary><b>Click to expand the full list of commands</b></summary>
+---
+
+### Train AutoEncoder
+
+This project based on `cuda 11.8`, `torch==2.6.0`
+
+We extract visual feature from front camera images, using to RL states.
