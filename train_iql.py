@@ -35,8 +35,6 @@ def expectile_loss(diff: torch.Tensor, tau: float):
 
 # -------------------------
 # Replay Buffer (NPZ)
-#  - 이미 obs/action이 정규화된 npz를 가정
-#  - obs_mean/std, act_mean/std는 "실행 시" 필요하므로 함께 들고 있음
 # -------------------------
 class ReplayBufferNPZ:
     def __init__(self, npz_path: str, device: str = "cuda"):
@@ -50,7 +48,6 @@ class ReplayBufferNPZ:
         self.sp = torch.from_numpy(d["next_observations"]).float().to(device)
         self.d  = torch.from_numpy(d["terminals"]).float().to(device)
 
-        # 실행(inference) 시 사용할 정규화 통계
         self.s_mean = torch.from_numpy(d["obs_mean"]).float().to(device)
         self.s_std  = torch.from_numpy(d["obs_std"]).float().to(device)
         self.a_mean = torch.from_numpy(d["act_mean"]).float().to(device)
@@ -106,8 +103,7 @@ class VNetwork(nn.Module):
 
 class GaussianPolicy(nn.Module):
     """
-    IQL actor: AWR 스타일로 dataset action의 log_prob를 최대화
-    실행 시에는 보통 mu를 사용(결정론적).
+    IQL actor: AWR 
     """
     def __init__(self, obs_dim, act_dim, hidden_dims=(256, 256), log_std_min=-5.0, log_std_max=2.0):
         super().__init__()
@@ -147,11 +143,11 @@ def main():
 
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--batch_size", type=int, default=256)
-    p.add_argument("--steps", type=int, default=3_000_000)
+    p.add_argument("--steps", type=int, default=5_000_000)
 
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--tau_expectile", type=float, default=0.7)
-    p.add_argument("--beta", type=float, default=3.0)
+    p.add_argument("--beta", type=float, default=10.0)
     p.add_argument("--clip_exp", type=float, default=100.0)
 
     p.add_argument("--lr_q", type=float, default=3e-4)
@@ -165,8 +161,8 @@ def main():
     p.add_argument("--save_dir", type=str, default="./IQL_checkpoints")
 
     p.add_argument("--hidden", type=int, default=256)
-    p.add_argument("--grad_clip", type=float, default=0.0, help="0이면 끔. (예: 1.0)")
-    p.add_argument("--save_deploy", action="store_true", help="로봇 실행용 최소 ckpt도 함께 저장")
+    p.add_argument("--grad_clip", type=float, default=0.0)
+    p.add_argument("--save_deploy", action="store_true")
 
     args = p.parse_args()
 
@@ -265,7 +261,7 @@ def main():
                 action_mse = (mu - a).pow(2).mean()
                 logp_mean = logp.mean()
                 w_clip_rate = (w_unclipped > args.clip_exp).float().mean()
-                success_rate_batch = (r.squeeze(-1) > 0.9).float().mean()  # reward==1.0 비율(배치 기준)
+                success_rate_batch = (r.squeeze(-1) > 0.9).float().mean()  
 
                 stats = {
                     "loss/q": loss_q.item(),
@@ -324,7 +320,7 @@ def main():
                 "a_std": rb.a_std.detach().cpu().numpy(),
             }
 
-            path = os.path.join(args.save_dir, f"iql_step_{step}_full_{args.seed}.pt")
+            path = os.path.join(args.save_dir, f"iql_step_{step}_full_{args.seed}_sec.pt")
             torch.save(full_ckpt, path)
             wandb.save(path)
 
@@ -340,7 +336,7 @@ def main():
                     "a_mean": rb.a_mean.detach().cpu().numpy(),
                     "a_std": rb.a_std.detach().cpu().numpy(),
                 }
-                dpath = os.path.join(args.save_dir, f"iql_policy_step_{step}_{args.seed}.pt")
+                dpath = os.path.join(args.save_dir, f"iql_policy_step_{step}_{args.seed}_sec.pt")
                 torch.save(deploy_ckpt, dpath)
                 wandb.save(dpath)
 

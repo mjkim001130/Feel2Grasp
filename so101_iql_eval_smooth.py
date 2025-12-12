@@ -29,13 +29,13 @@ from circle_detector import CircleDetector
 
 # ======================== Configuration ========================
 # IQL Checkpoint paths
-IQL_CHECKPOINT_PATH = "IQL_checkpoints/iql_step_3000000_full_0.pt"
+IQL_CHECKPOINT_PATH = "IQL_checkpoints/iql_step_2000000_full_0.pt"
 ENCODER_CHECKPOINT_PATH = "ae_out/encoder.pt"
 
 # Episode configuration
-NUM_EPISODES = 1  # 한 에피소드만 실행
+NUM_EPISODES = 1  
 FPS = 25
-EPISODE_TIME_SEC = 30  # 짧게 테스트 (약 75 step)
+EPISODE_TIME_SEC = 60  
 DISPLAY_DATA = False  # Disabled to prevent camera lag
 DEVICE = "cuda"
 
@@ -49,10 +49,10 @@ MAX_JOINT_SPEED = 10  # Maximum radians per step (balanced for stability)
 
 # Circle detection
 NUM_BG_FRAMES = 10
-K_STD = 20  # Increased from 1.5 to reduce false positives
+K_STD = 15  # Increased from 1.5 to reduce false positives
 
 # Dataset configuration (optional, for saving evaluation data)
-SAVE_DATASET = False  # True로 설정하면 evaluation 데이터 저장
+SAVE_DATASET = False  
 DATASET_REPO_ID = "mjkim00/IQL_eval"
 
 
@@ -333,7 +333,7 @@ def main():
             right_circle = circle_detector.detect(obs_wrapped[right_key], "right")
 
             # Display data (reduce frequency to avoid lag)
-            if DISPLAY_DATA and step % 15 == 0:  # Log every 15 steps (~0.6s at 25 FPS)
+            if DISPLAY_DATA and step % 5 == 0:  # Log every 15 steps (~0.6s at 25 FPS)
                 log_rerun_data(
                     observation=obs_wrapped,
                     action=action_dict,
