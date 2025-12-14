@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 IQL Policy wrapper compatible with LeRobot's PreTrainedPolicy interface.
 
