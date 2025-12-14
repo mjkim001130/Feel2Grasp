@@ -219,12 +219,8 @@ class IQLPreTrainedPolicy(PreTrainedPolicy):
         self.policy_net.to(self.device)
         self.policy_net.eval()
 
-        # Load normalization parameters
-        print("Loading normalization params from checkpoint")
-        self.obs_mean = torch.from_numpy(ckpt["s_mean"]).float().to(self.device)
-        self.obs_std = torch.from_numpy(ckpt["s_std"]).float().to(self.device)
-        self.act_mean = torch.from_numpy(ckpt["a_mean"]).float().to(self.device)
-        self.act_std = torch.from_numpy(ckpt["a_std"]).float().to(self.device)
+        # No normalization - using raw data
+        self.use_normalization = False
 
         # Load image encoder
         print(f"Loading image encoder from {encoder_path}")
@@ -347,14 +343,12 @@ class IQLPreTrainedPolicy(PreTrainedPolicy):
         # Concatenate: [64 + 2 + 6] = 72
         state = torch.cat([img_latent, circles, joint_vec], dim=1)  # (B, 72)
 
-        # 4. Normalize
-        state_norm = (state - self.obs_mean) / self.obs_std
+        # Print last 8 dimensions of state every step (circle detection + joints)
+        last_8 = state[0, -8:].cpu().numpy()  # (8,)
+        print(f"[State] last 8 dims: [{', '.join([f'{v:.4f}' for v in last_8])}]")
 
-        # 5. Get action
-        action_norm = self.policy_net.get_action(state_norm)  # (B, 6)
-
-        # 6. Denormalize
-        action = action_norm * self.act_std + self.act_mean
+        # 4. Get action (no normalization)
+        action = self.policy_net.get_action(state)  # (B, 6)
 
         # Debug logging (only on first step)
         if hasattr(self, '_debug_last_step') and self._debug_last_step:
@@ -362,10 +356,8 @@ class IQLPreTrainedPolicy(PreTrainedPolicy):
             print(f"    mean={img_latent[0].mean().item():.4f}, std={img_latent[0].std().item():.4f}, min={img_latent[0].min().item():.4f}, max={img_latent[0].max().item():.4f}")
             print(f"  [Policy Debug] Circle detection: left={circles[0, 0].item():.0f}, right={circles[0, 1].item():.0f}")
             print(f"  [Policy Debug] Joint positions: [{', '.join([f'{joint_vec[0, i].item():.2f}' for i in range(6)])}]")
-            print(f"  [Policy Debug] Raw state (72D): mean={state[0].mean().item():.4f}, std={state[0].std().item():.4f}")
-            print(f"  [Policy Debug] Normalized state (72D): mean={state_norm[0].mean().item():.4f}, std={state_norm[0].std().item():.4f}")
-            print(f"  [Policy Debug] Normalized action (6D): [{', '.join([f'{action_norm[0, i].item():.4f}' for i in range(6)])}]")
-            print(f"  [Policy Debug] Denormalized action (6D): [{', '.join([f'{action[0, i].item():.2f}' for i in range(6)])}]")
+            print(f"  [Policy Debug] State (72D): mean={state[0].mean().item():.4f}, std={state[0].std().item():.4f}")
+            print(f"  [Policy Debug] Action (6D): [{', '.join([f'{action[0, i].item():.2f}' for i in range(6)])}]")
             print("=" * 80)
             self._debug_last_step = False  # Reset flag
 

@@ -29,14 +29,14 @@ from circle_detector import CircleDetector
 
 # ======================== Configuration ========================
 # IQL Checkpoint paths
-IQL_CHECKPOINT_PATH = "IQL_checkpoints/iql_step_2000000_full_0.pt"
+IQL_CHECKPOINT_PATH = "IQL_checkpoints/iql_step_4200000_full_0_sec.pt"
 ENCODER_CHECKPOINT_PATH = "ae_out/encoder.pt"
 
 # Episode configuration
 NUM_EPISODES = 1  
 FPS = 25
 EPISODE_TIME_SEC = 60  
-DISPLAY_DATA = False  # Disabled to prevent camera lag
+DISPLAY_DATA = True  # Disabled to prevent camera lag
 DEVICE = "cuda"
 
 # Action speed control (for smooth motion)
@@ -53,7 +53,7 @@ K_STD = 15  # Increased from 1.5 to reduce false positives
 
 # Dataset configuration (optional, for saving evaluation data)
 SAVE_DATASET = False  
-DATASET_REPO_ID = "mjkim00/IQL_eval"
+DATASET_REPO_ID = "mjkim00/IQL_eval_test"
 
 
 def main():
@@ -300,6 +300,10 @@ def main():
                 current_pos = obs_wrapped[f"{name}.pos"]
                 target_pos = target_action[i]
 
+                # # Invert gripper action (gripper moves opposite direction)
+                # if name == "gripper":
+                #     target_pos = -target_pos
+ 
                 # Compute difference (both in unwrapped space)
                 diff = target_pos - current_pos
 
@@ -333,7 +337,7 @@ def main():
             right_circle = circle_detector.detect(obs_wrapped[right_key], "right")
 
             # Display data (reduce frequency to avoid lag)
-            if DISPLAY_DATA and step % 5 == 0:  # Log every 15 steps (~0.6s at 25 FPS)
+            if DISPLAY_DATA and step % 1 == 0:  
                 log_rerun_data(
                     observation=obs_wrapped,
                     action=action_dict,

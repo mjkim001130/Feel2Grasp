@@ -1,6 +1,6 @@
 # train_iql.py 
 # Usage:
-#   python train_iql.py --data replay_buffer_iql_normalized.npz --project Feel2Grasp-IQL --run_name iql_normalized
+#   python train_iql.py --data replay_buffer_iql_72d.npz --project Feel2Grasp-IQL --run_name iql_experiment_1
 
 import argparse, time, os, random
 import numpy as np
@@ -47,11 +47,6 @@ class ReplayBufferNPZ:
         self.r  = torch.from_numpy(d["rewards"]).float().to(device)
         self.sp = torch.from_numpy(d["next_observations"]).float().to(device)
         self.d  = torch.from_numpy(d["terminals"]).float().to(device)
-
-        self.s_mean = torch.from_numpy(d["obs_mean"]).float().to(device)
-        self.s_std  = torch.from_numpy(d["obs_std"]).float().to(device)
-        self.a_mean = torch.from_numpy(d["act_mean"]).float().to(device)
-        self.a_std  = torch.from_numpy(d["act_std"]).float().to(device)
 
         self.n = self.s.shape[0]
         self.obs_dim = self.s.shape[1]
@@ -136,9 +131,10 @@ class GaussianPolicy(nn.Module):
 # -------------------------
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--data", type=str, required=True, help="replay_buffer_iql_normalized.npz")
-    p.add_argument("--project", type=str, default="Feel2Grasp-IQL3")
-    p.add_argument("--run_name", type=str, default=None)
+    #p.add_argument("--data", type=str, required=True, help="replay_buffer_iql_72d.npz")
+    p.add_argument("--data", type=str, default="replay_buffer_iql_72d.npz", help="replay_buffer_iql_72d.npz")
+    p.add_argument("--project", type=str, default="Feel2Grasp-IQL")
+    p.add_argument("--run_name", type=str, default="iql")
     p.add_argument("--seed", type=int, default=0)
 
     p.add_argument("--device", type=str, default="cuda")
@@ -157,7 +153,7 @@ def main():
 
     p.add_argument("--target_tau", type=float, default=0.005)
     p.add_argument("--log_interval", type=int, default=500)
-    p.add_argument("--save_interval", type=int, default=50_000)
+    p.add_argument("--save_interval", type=int, default=5_000)
     p.add_argument("--save_dir", type=str, default="./IQL_checkpoints")
 
     p.add_argument("--hidden", type=int, default=256)
@@ -314,13 +310,9 @@ def main():
                 "tau_expectile": args.tau_expectile,
                 "beta": args.beta,
                 "clip_exp": args.clip_exp,
-                "s_mean": rb.s_mean.detach().cpu().numpy(),
-                "s_std": rb.s_std.detach().cpu().numpy(),
-                "a_mean": rb.a_mean.detach().cpu().numpy(),
-                "a_std": rb.a_std.detach().cpu().numpy(),
             }
 
-            path = os.path.join(args.save_dir, f"iql_step_{step}_full_{args.seed}_sec.pt")
+            path = os.path.join(args.save_dir, f"iql_step_{step}_full_{args.seed}_{args.tau_expectile}.pt")
             torch.save(full_ckpt, path)
             wandb.save(path)
 
@@ -331,10 +323,6 @@ def main():
                     "obs_dim": obs_dim,
                     "act_dim": act_dim,
                     "hidden": args.hidden,
-                    "s_mean": rb.s_mean.detach().cpu().numpy(),
-                    "s_std": rb.s_std.detach().cpu().numpy(),
-                    "a_mean": rb.a_mean.detach().cpu().numpy(),
-                    "a_std": rb.a_std.detach().cpu().numpy(),
                 }
                 dpath = os.path.join(args.save_dir, f"iql_policy_step_{step}_{args.seed}_sec.pt")
                 torch.save(deploy_ckpt, dpath)
