@@ -1,8 +1,19 @@
-# train_iql.py 
-# Usage:
-#   python train_iql.py --data replay_buffer_iql_72d.npz --project Feel2Grasp-IQL --run_name iql_experiment_1
+#!/usr/bin/env python3
+"""
+IQL Training for 102d state space (latent reward version)
 
-import argparse, time, os, random
+State: [front_z(64), left_z(16), right_z(16), obs_state(6)] = 102d
+Reward: latent-based reward from left/right encoders [-1, 1]
+
+Usage:
+    python train_iql_102d.py --data replay_buffer_latent_reward.npz
+"""
+
+import argparse
+import os
+import random
+import time
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -22,13 +33,14 @@ def set_seed(seed: int):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
 def soft_update(target: nn.Module, source: nn.Module, tau: float):
     with torch.no_grad():
         for tp, sp in zip(target.parameters(), source.parameters()):
             tp.data.mul_(1.0 - tau).add_(sp.data, alpha=tau)
 
+
 def expectile_loss(diff: torch.Tensor, tau: float):
-    # diff = q - v
     weight = torch.where(diff > 0, tau, 1.0 - tau)
     return (weight * diff.pow(2)).mean()
 
@@ -42,23 +54,28 @@ class ReplayBufferNPZ:
 
         self.device = device
 
-        self.s  = torch.from_numpy(d["observations"]).float().to(device)
-        self.a  = torch.from_numpy(d["actions"]).float().to(device)
-        self.r  = torch.from_numpy(d["rewards"]).float().to(device)
+        self.s = torch.from_numpy(d["observations"]).float().to(device)
+        self.a = torch.from_numpy(d["actions"]).float().to(device)
+        self.r = torch.from_numpy(d["rewards"]).float().to(device)
         self.sp = torch.from_numpy(d["next_observations"]).float().to(device)
-        self.d  = torch.from_numpy(d["terminals"]).float().to(device)
+        self.d = torch.from_numpy(d["terminals"]).float().to(device)
 
         self.n = self.s.shape[0]
         self.obs_dim = self.s.shape[1]
         self.act_dim = self.a.shape[1] if self.a.ndim == 2 else 1
 
+        # Print buffer stats
+        print(f"Replay Buffer loaded: {npz_path}")
+        print(f"  N={self.n}, obs_dim={self.obs_dim}, act_dim={self.act_dim}")
+        print(f"  Reward: min={self.r.min():.4f}, mean={self.r.mean():.4f}, max={self.r.max():.4f}")
+
     def sample(self, batch_size: int):
         idx = torch.randint(0, self.n, (batch_size,), device=self.s.device)
-        s  = self.s[idx]
-        a  = self.a[idx]
-        r  = self.r[idx].unsqueeze(-1)
+        s = self.s[idx]
+        a = self.a[idx]
+        r = self.r[idx].unsqueeze(-1)
         sp = self.sp[idx]
-        d  = self.d[idx].unsqueeze(-1)
+        d = self.d[idx].unsqueeze(-1)
         return s, a, r, sp, d
 
 
@@ -79,6 +96,7 @@ class MLP(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+
 class QNetwork(nn.Module):
     def __init__(self, obs_dim, act_dim, hidden_dims=(256, 256)):
         super().__init__()
@@ -88,6 +106,7 @@ class QNetwork(nn.Module):
         x = torch.cat([s, a], dim=-1)
         return self.mlp(x)
 
+
 class VNetwork(nn.Module):
     def __init__(self, obs_dim, hidden_dims=(256, 256)):
         super().__init__()
@@ -96,16 +115,16 @@ class VNetwork(nn.Module):
     def forward(self, s):
         return self.mlp(s)
 
+
 class GaussianPolicy(nn.Module):
-    """
-    IQL actor: AWR 
-    """
+    """IQL actor with AWR."""
+
     def __init__(self, obs_dim, act_dim, hidden_dims=(256, 256), log_std_min=-5.0, log_std_max=2.0):
         super().__init__()
         self.backbone = MLP(
             obs_dim,
             hidden_dims[-1],
-            hidden_dims=hidden_dims[:-1] if len(hidden_dims) > 1 else ()
+            hidden_dims=hidden_dims[:-1] if len(hidden_dims) > 1 else (),
         )
         self.mu = nn.Linear(hidden_dims[-1], act_dim)
         self.log_std = nn.Linear(hidden_dims[-1], act_dim)
@@ -123,7 +142,11 @@ class GaussianPolicy(nn.Module):
         std = torch.exp(log_std)
         z = (a - mu) / std
         logp = -0.5 * (z.pow(2) + 2.0 * log_std + np.log(2.0 * np.pi))
-        return logp.sum(dim=-1, keepdim=True)  # (B,1)
+        return logp.sum(dim=-1, keepdim=True)
+
+    def get_action(self, s):
+        mu, _ = self(s)
+        return mu
 
 
 # -------------------------
@@ -131,15 +154,14 @@ class GaussianPolicy(nn.Module):
 # -------------------------
 def main():
     p = argparse.ArgumentParser()
-    #p.add_argument("--data", type=str, required=True, help="replay_buffer_iql_72d.npz")
-    p.add_argument("--data", type=str, default="replay_buffer_iql_72d.npz", help="replay_buffer_iql_72d.npz")
-    p.add_argument("--project", type=str, default="Feel2Grasp-IQL")
-    p.add_argument("--run_name", type=str, default="iql")
+    p.add_argument("--data", type=str, default="replay_buffer_latent_reward.npz")
+    p.add_argument("--project", type=str, default="Feel2Grasp-IQL-102d")
+    p.add_argument("--run_name", type=str, default="iql_102d")
     p.add_argument("--seed", type=int, default=0)
 
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--batch_size", type=int, default=256)
-    p.add_argument("--steps", type=int, default=3_000_000)
+    p.add_argument("--steps", type=int, default=2_000_000)
 
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--tau_expectile", type=float, default=0.7)
@@ -153,12 +175,11 @@ def main():
 
     p.add_argument("--target_tau", type=float, default=0.005)
     p.add_argument("--log_interval", type=int, default=500)
-    p.add_argument("--save_interval", type=int, default=5_000)
-    p.add_argument("--save_dir", type=str, default="./IQL_checkpoints")
+    p.add_argument("--save_interval", type=int, default=100_000)
+    p.add_argument("--save_dir", type=str, default="./IQL_checkpoints_102d")
 
     p.add_argument("--hidden", type=int, default=256)
     p.add_argument("--grad_clip", type=float, default=0.0)
-    p.add_argument("--save_deploy", action="store_true")
 
     args = p.parse_args()
 
@@ -171,6 +192,17 @@ def main():
     rb = ReplayBufferNPZ(args.data, device=device)
     obs_dim, act_dim = rb.obs_dim, rb.act_dim
     wandb.config.update({"obs_dim": obs_dim, "act_dim": act_dim}, allow_val_change=True)
+
+    print(f"\n{'='*60}")
+    print(f"IQL Training (102d state)")
+    print(f"{'='*60}")
+    print(f"  obs_dim: {obs_dim}")
+    print(f"  act_dim: {act_dim}")
+    print(f"  hidden: {args.hidden}")
+    print(f"  steps: {args.steps}")
+    print(f"  tau_expectile: {args.tau_expectile}")
+    print(f"  beta: {args.beta}")
+    print(f"{'='*60}\n")
 
     hidden_dims = (args.hidden, args.hidden)
 
@@ -187,8 +219,12 @@ def main():
         for p_ in m.parameters():
             p_.requires_grad_(False)
 
-    opt_q  = torch.optim.AdamW(list(q1.parameters()) + list(q2.parameters()), lr=args.lr_q, weight_decay=args.weight_decay)
-    opt_v  = torch.optim.AdamW(v.parameters(), lr=args.lr_v, weight_decay=args.weight_decay)
+    opt_q = torch.optim.AdamW(
+        list(q1.parameters()) + list(q2.parameters()),
+        lr=args.lr_q,
+        weight_decay=args.weight_decay,
+    )
+    opt_v = torch.optim.AdamW(v.parameters(), lr=args.lr_v, weight_decay=args.weight_decay)
     opt_pi = torch.optim.AdamW(pi.parameters(), lr=args.lr_pi, weight_decay=args.weight_decay)
 
     start_time = time.time()
@@ -219,7 +255,7 @@ def main():
             q_min = torch.min(q1t, q2t)
 
         v_s = v(s)
-        diff = (q_min - v_s)
+        diff = q_min - v_s
         loss_v = expectile_loss(diff, tau=args.tau_expectile)
 
         opt_v.zero_grad(set_to_none=True)
@@ -230,7 +266,7 @@ def main():
 
         # 3) Policy update: AWR with weights exp(adv/beta)
         with torch.no_grad():
-            adv = (q_min - v_s)
+            adv = q_min - v_s
             w_unclipped = torch.exp(adv / args.beta)
             w = w_unclipped.clamp(max=args.clip_exp)
 
@@ -257,7 +293,8 @@ def main():
                 action_mse = (mu - a).pow(2).mean()
                 logp_mean = logp.mean()
                 w_clip_rate = (w_unclipped > args.clip_exp).float().mean()
-                success_rate_batch = (r.squeeze(-1) > 0.9).float().mean()  
+                # For latent reward, high reward means closer to success
+                high_reward_rate = (r.squeeze(-1) > 0.5).float().mean()
 
                 stats = {
                     "loss/q": loss_q.item(),
@@ -274,21 +311,23 @@ def main():
                     "reward/mean": r.mean().item(),
                     "reward/min": r.min().item(),
                     "reward/max": r.max().item(),
-                    "reward/success_rate_batch": success_rate_batch.item(),
+                    "reward/high_rate": high_reward_rate.item(),
                     "done/mean": d.mean().item(),
                     "perf/steps_per_sec": steps_per_sec,
                     "step": step,
                 }
 
             wandb.log(stats, step=step)
-            t.set_postfix({
-                "Q": f"{stats['loss/q']:.4f}",
-                "V": f"{stats['loss/v']:.4f}",
-                "Pi": f"{stats['loss/pi']:.4f}",
-                "ActMSE": f"{stats['action/mse']:.2e}",
-                "clip%": f"{100*stats['w/clip_rate']:.1f}",
-                "R/s": f"{steps_per_sec:.1f}",
-            })
+            t.set_postfix(
+                {
+                    "Q": f"{stats['loss/q']:.4f}",
+                    "V": f"{stats['loss/v']:.4f}",
+                    "Pi": f"{stats['loss/pi']:.4f}",
+                    "ActMSE": f"{stats['action/mse']:.2e}",
+                    "clip%": f"{100*stats['w/clip_rate']:.1f}",
+                    "R/s": f"{steps_per_sec:.1f}",
+                }
+            )
 
         # Save
         if step % args.save_interval == 0 or step == args.steps:
@@ -312,25 +351,17 @@ def main():
                 "clip_exp": args.clip_exp,
             }
 
-            path = os.path.join(args.save_dir, f"iql_step_{step}_full_{args.seed}_{args.tau_expectile}_{args.beta}.pt")
+            path = os.path.join(
+                args.save_dir,
+                f"iql_102d_step_{step}_{args.seed}_{args.tau_expectile}_{args.beta}.pt",
+            )
             torch.save(full_ckpt, path)
             wandb.save(path)
-
-            if args.save_deploy:
-                deploy_ckpt = {
-                    "step": step,
-                    "pi": pi.state_dict(),
-                    "obs_dim": obs_dim,
-                    "act_dim": act_dim,
-                    "hidden": args.hidden,
-                }
-                dpath = os.path.join(args.save_dir, f"iql_policy_step_{step}_{args.seed}_sec.pt")
-                torch.save(deploy_ckpt, dpath)
-                wandb.save(dpath)
 
             print(f"\nSaved: {path}")
 
     wandb.finish()
+    print("\nTraining complete!")
 
 
 if __name__ == "__main__":

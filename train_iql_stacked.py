@@ -1,6 +1,9 @@
-# train_iql.py 
+# train_iql_stacked.py
+# IQL training with frame-stacked observations
+#
 # Usage:
-#   python train_iql.py --data replay_buffer_iql_72d.npz --project Feel2Grasp-IQL --run_name iql_experiment_1
+#   python train_iql_stacked.py --data replay_buffer_iql_72d_stacked4.npz --run_name iql_stacked4
+#   python train_iql_stacked.py --data replay_buffer_iql_72d_stacked4.npz --stack_size 4
 
 import argparse, time, os, random
 import numpy as np
@@ -28,13 +31,12 @@ def soft_update(target: nn.Module, source: nn.Module, tau: float):
             tp.data.mul_(1.0 - tau).add_(sp.data, alpha=tau)
 
 def expectile_loss(diff: torch.Tensor, tau: float):
-    # diff = q - v
     weight = torch.where(diff > 0, tau, 1.0 - tau)
     return (weight * diff.pow(2)).mean()
 
 
 # -------------------------
-# Replay Buffer (NPZ)
+# Replay Buffer (NPZ) for Stacked Data
 # -------------------------
 class ReplayBufferNPZ:
     def __init__(self, npz_path: str, device: str = "cuda"):
@@ -42,23 +44,37 @@ class ReplayBufferNPZ:
 
         self.device = device
 
-        self.s  = torch.from_numpy(d["observations"]).float().to(device)
-        self.a  = torch.from_numpy(d["actions"]).float().to(device)
-        self.r  = torch.from_numpy(d["rewards"]).float().to(device)
-        self.sp = torch.from_numpy(d["next_observations"]).float().to(device)
-        self.d  = torch.from_numpy(d["terminals"]).float().to(device)
+        # Handle different key names
+        if "obs" in d:
+            self.s = torch.from_numpy(d["obs"]).float().to(device)
+            self.sp = torch.from_numpy(d["next_obs"]).float().to(device)
+            self.d = torch.from_numpy(d["dones"]).float().to(device)
+        else:
+            self.s = torch.from_numpy(d["observations"]).float().to(device)
+            self.sp = torch.from_numpy(d["next_observations"]).float().to(device)
+            self.d = torch.from_numpy(d["terminals"]).float().to(device)
+
+        self.a = torch.from_numpy(d["actions"]).float().to(device)
+        self.r = torch.from_numpy(d["rewards"]).float().to(device)
 
         self.n = self.s.shape[0]
         self.obs_dim = self.s.shape[1]
         self.act_dim = self.a.shape[1] if self.a.ndim == 2 else 1
 
+        # Load stack metadata if available
+        self.stack_size = int(d["stack_size"]) if "stack_size" in d else None
+        self.original_obs_dim = int(d["original_obs_dim"]) if "original_obs_dim" in d else None
+
+        if self.stack_size:
+            print(f"Loaded stacked buffer: stack_size={self.stack_size}, original_obs_dim={self.original_obs_dim}")
+
     def sample(self, batch_size: int):
         idx = torch.randint(0, self.n, (batch_size,), device=self.s.device)
-        s  = self.s[idx]
-        a  = self.a[idx]
-        r  = self.r[idx].unsqueeze(-1)
+        s = self.s[idx]
+        a = self.a[idx]
+        r = self.r[idx].unsqueeze(-1)
         sp = self.sp[idx]
-        d  = self.d[idx].unsqueeze(-1)
+        d = self.d[idx].unsqueeze(-1)
         return s, a, r, sp, d
 
 
@@ -97,9 +113,7 @@ class VNetwork(nn.Module):
         return self.mlp(s)
 
 class GaussianPolicy(nn.Module):
-    """
-    IQL actor: AWR 
-    """
+    """IQL actor: AWR"""
     def __init__(self, obs_dim, act_dim, hidden_dims=(256, 256), log_std_min=-5.0, log_std_max=2.0):
         super().__init__()
         self.backbone = MLP(
@@ -123,7 +137,7 @@ class GaussianPolicy(nn.Module):
         std = torch.exp(log_std)
         z = (a - mu) / std
         logp = -0.5 * (z.pow(2) + 2.0 * log_std + np.log(2.0 * np.pi))
-        return logp.sum(dim=-1, keepdim=True)  # (B,1)
+        return logp.sum(dim=-1, keepdim=True)
 
 
 # -------------------------
@@ -131,15 +145,14 @@ class GaussianPolicy(nn.Module):
 # -------------------------
 def main():
     p = argparse.ArgumentParser()
-    #p.add_argument("--data", type=str, required=True, help="replay_buffer_iql_72d.npz")
-    p.add_argument("--data", type=str, default="replay_buffer_iql_72d.npz", help="replay_buffer_iql_72d.npz")
+    p.add_argument("--data", type=str, default="replay_buffer_iql_72d_stacked4.npz", help="Path to stacked replay buffer")
     p.add_argument("--project", type=str, default="Feel2Grasp-IQL")
-    p.add_argument("--run_name", type=str, default="iql")
+    p.add_argument("--run_name", type=str, default="iql_stacked")
     p.add_argument("--seed", type=int, default=0)
 
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--batch_size", type=int, default=256)
-    p.add_argument("--steps", type=int, default=3_000_000)
+    p.add_argument("--steps", type=int, default=5_000_000)
 
     p.add_argument("--gamma", type=float, default=0.99)
     p.add_argument("--tau_expectile", type=float, default=0.7)
@@ -153,12 +166,15 @@ def main():
 
     p.add_argument("--target_tau", type=float, default=0.005)
     p.add_argument("--log_interval", type=int, default=500)
-    p.add_argument("--save_interval", type=int, default=5_000)
+    p.add_argument("--save_interval", type=int, default=100_000)
     p.add_argument("--save_dir", type=str, default="./IQL_checkpoints")
 
     p.add_argument("--hidden", type=int, default=256)
     p.add_argument("--grad_clip", type=float, default=0.0)
     p.add_argument("--save_deploy", action="store_true")
+
+    # Frame stacking specific
+    p.add_argument("--stack_size", type=int, default=4, help="Number of stacked frames (for metadata)")
 
     args = p.parse_args()
 
@@ -170,7 +186,26 @@ def main():
 
     rb = ReplayBufferNPZ(args.data, device=device)
     obs_dim, act_dim = rb.obs_dim, rb.act_dim
-    wandb.config.update({"obs_dim": obs_dim, "act_dim": act_dim}, allow_val_change=True)
+
+    # Get stack_size from buffer or args
+    stack_size = rb.stack_size if rb.stack_size else args.stack_size
+    original_obs_dim = rb.original_obs_dim if rb.original_obs_dim else 72
+
+    print(f"\n{'='*60}")
+    print(f"Frame-Stacked IQL Training")
+    print(f"{'='*60}")
+    print(f"  obs_dim: {obs_dim} ({original_obs_dim} x {stack_size} frames)")
+    print(f"  act_dim: {act_dim}")
+    print(f"  stack_size: {stack_size}")
+    print(f"  transitions: {rb.n}")
+    print(f"{'='*60}\n")
+
+    wandb.config.update({
+        "obs_dim": obs_dim,
+        "act_dim": act_dim,
+        "stack_size": stack_size,
+        "original_obs_dim": original_obs_dim,
+    }, allow_val_change=True)
 
     hidden_dims = (args.hidden, args.hidden)
 
@@ -187,12 +222,12 @@ def main():
         for p_ in m.parameters():
             p_.requires_grad_(False)
 
-    opt_q  = torch.optim.AdamW(list(q1.parameters()) + list(q2.parameters()), lr=args.lr_q, weight_decay=args.weight_decay)
-    opt_v  = torch.optim.AdamW(v.parameters(), lr=args.lr_v, weight_decay=args.weight_decay)
+    opt_q = torch.optim.AdamW(list(q1.parameters()) + list(q2.parameters()), lr=args.lr_q, weight_decay=args.weight_decay)
+    opt_v = torch.optim.AdamW(v.parameters(), lr=args.lr_v, weight_decay=args.weight_decay)
     opt_pi = torch.optim.AdamW(pi.parameters(), lr=args.lr_pi, weight_decay=args.weight_decay)
 
     start_time = time.time()
-    t = tqdm(range(1, args.steps + 1), desc="Training IQL")
+    t = tqdm(range(1, args.steps + 1), desc="Training IQL (Stacked)")
 
     for step in t:
         s, a, r, sp, d = rb.sample(args.batch_size)
@@ -257,7 +292,7 @@ def main():
                 action_mse = (mu - a).pow(2).mean()
                 logp_mean = logp.mean()
                 w_clip_rate = (w_unclipped > args.clip_exp).float().mean()
-                success_rate_batch = (r.squeeze(-1) > 0.9).float().mean()  
+                success_rate_batch = (r.squeeze(-1) > 0.9).float().mean()
 
                 stats = {
                     "loss/q": loss_q.item(),
@@ -310,9 +345,12 @@ def main():
                 "tau_expectile": args.tau_expectile,
                 "beta": args.beta,
                 "clip_exp": args.clip_exp,
+                # Frame stacking metadata
+                "stack_size": stack_size,
+                "original_obs_dim": original_obs_dim,
             }
 
-            path = os.path.join(args.save_dir, f"iql_step_{step}_full_{args.seed}_{args.tau_expectile}_{args.beta}.pt")
+            path = os.path.join(args.save_dir, f"iql_stacked{stack_size}_step_{step}_{args.seed}_{args.tau_expectile}_{args.beta}.pt")
             torch.save(full_ckpt, path)
             wandb.save(path)
 
@@ -323,8 +361,10 @@ def main():
                     "obs_dim": obs_dim,
                     "act_dim": act_dim,
                     "hidden": args.hidden,
+                    "stack_size": stack_size,
+                    "original_obs_dim": original_obs_dim,
                 }
-                dpath = os.path.join(args.save_dir, f"iql_policy_step_{step}_{args.seed}_sec.pt")
+                dpath = os.path.join(args.save_dir, f"iql_stacked{stack_size}_policy_step_{step}_{args.seed}.pt")
                 torch.save(deploy_ckpt, dpath)
                 wandb.save(dpath)
 
