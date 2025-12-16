@@ -17,10 +17,11 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 # Encoders
 # -------------------------
 class ConvEncoder(nn.Module):
-    def __init__(self, latent_dim: int, resize_hw=(128, 128), in_ch: int = 3, num_down: int = 4):
+    def __init__(self, latent_dim: int, resize_hw=(128, 128), in_ch: int = 3, num_down: int = 4, use_adaptive_pool: bool = True):
         super().__init__()
         self.resize_hw = resize_hw
         self.num_down = num_down
+        self.use_adaptive_pool = use_adaptive_pool
 
         chs = [32, 64, 128, 256]
         if num_down == 5:
@@ -31,12 +32,17 @@ class ConvEncoder(nn.Module):
         for c_out in chs:
             layers += [nn.Conv2d(c_in, c_out, 4, 2, 1), nn.ReLU()]
             c_in = c_out
-        self.net = nn.Sequential(*layers)
 
-        H, W = resize_hw
-        ds = 2 ** num_down
-        assert H % ds == 0 and W % ds == 0, f"resize_hw must be divisible by {ds}"
-        fc_in = chs[-1] * (H // ds) * (W // ds)
+        if use_adaptive_pool:
+            layers.append(nn.AdaptiveAvgPool2d((4, 4)))
+            fc_in = chs[-1] * 4 * 4  # 256 * 4 * 4 = 4096
+        else:
+            H, W = resize_hw
+            ds = 2 ** num_down
+            assert H % ds == 0 and W % ds == 0, f"resize_hw must be divisible by {ds}"
+            fc_in = chs[-1] * (H // ds) * (W // ds)
+
+        self.net = nn.Sequential(*layers)
         self.fc = nn.Linear(fc_in, latent_dim)
 
     def forward(self, x):
@@ -61,7 +67,13 @@ def load_encoder_pt(path: str, device: torch.device, override_latent_dim: Option
 
     resize_hw = tuple(ckpt.get("resize_hw", (128, 128)))
 
-    model = ConvEncoder(latent_dim=latent_dim, resize_hw=resize_hw, num_down=num_down)
+    # Detect whether checkpoint uses AdaptiveAvgPool2d by checking fc.weight input size
+    # With AdaptiveAvgPool2d(4,4): fc_in = 256 * 4 * 4 = 4096
+    # Without: fc_in = 256 * (H/16) * (W/16) = 256 * 8 * 8 = 16384 for 128x128
+    fc_in_size = sd["fc.weight"].shape[1]
+    use_adaptive_pool = (fc_in_size == 4096)
+
+    model = ConvEncoder(latent_dim=latent_dim, resize_hw=resize_hw, num_down=num_down, use_adaptive_pool=use_adaptive_pool)
     model.load_state_dict(sd, strict=True)
 
     model.eval().to(device)
@@ -198,7 +210,7 @@ def main():
     ap.add_argument("--right_key", default="observation.images.right")
 
     ap.add_argument("--batch_size", type=int, default=256)
-    ap.add_argument("--reward_success_value", type=float, default=10.0, help="Value in parquet that denotes circle/success")
+    ap.add_argument("--reward_success_value", type=float, default=1.0, help="Value in parquet that denotes circle/success")
     ap.add_argument("--scale_reward_to_10", action="store_true", help="Scale (left+right) reward from ~[-2,2] to [-10,10]")
 
     args = ap.parse_args()
@@ -234,7 +246,7 @@ def main():
     success_mask = circle_reward_raw >= float(args.reward_success_value) - 1e-6
 
     # Load dataset
-    ds = LeRobotDataset(args.repo_id, split="train")
+    ds = LeRobotDataset(args.repo_id)
     print("Dataset length:", len(ds), "Parquet rows:", len(df))
 
     # Build ds_index list aligned to parquet order
