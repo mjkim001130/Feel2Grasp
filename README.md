@@ -1,5 +1,14 @@
 # Feel2Grasp
 
+**Feel2Grasp: Precise Grasp using Tactile Sensors with Offline RL**
+
+This repository is for **Yonsei MEU6505**.
+
+## Overview
+
+Feel2Grasp aims to learn precise grasping behaviors using tactile sensors and offline reinforcement learning.
+We also train an AutoEncoder to extract visual features from the front camera images and use them as part of the RL state.
+
 ## Installation
 
 
@@ -41,12 +50,15 @@ pip install 'lerobot[feetech]'
 
 ### so101
 
-Following the SO-101 [setup](https://huggingface.co/docs/lerobot/so101)
+Follow the official SO-101 setup guide: [setup](https://huggingface.co/docs/lerobot/so101)
 
 ---
 
 ### Train AutoEncoder
 
-This project based on `cuda 11.8`, `torch==2.6.0`
+This project is based on:
 
-We extract visual feature from front camera images, using to RL states.
+- CUDA 11.8
+- PyTorch 2.6.0
+
+We train an AutoEncoder to extract visual features from the front camera images, which are used in RL states.
