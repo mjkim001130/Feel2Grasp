@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Feel2Grasp: Tactile‑Conditioned Offline RL for Re‑grasping</title>
+  <meta name="description" content="Feel2Grasp project page." />
+  <link rel="icon" href="assets/images/teaser_1.png" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script defer src="https://use.fontawesome.com/releases/v6.5.0/js/all.js"></script>
+</head>
+
+<body>
+<section class="hero is-white">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <p class="kicker">Project</p>
+      <h1 class="title is-1 publication-title">Feel2Grasp: Tactile‑Conditioned Offline RL for Re‑grasping</h1>
+      <p class="subtitle is-5 publication-authors">
+      <a href="https://mjkim001130.github.io/" target="_blank" rel="noopener">Minjae Kim</a>
+      ·
+      <a href="https://exaflops26.github.io/" target="_blank" rel="noopener">Kyoungin Baik</a>
+      ·
+      <a href="" target="_blank" rel="noopener">Juhyung Kim</a>
+    </p>
+
+
+      <div class="publication-links buttons are-small mt-3">
+        <a class="button is-light" href="https://github.com/mjkim001130/Feel2Grasp" target="_blank" rel="noopener">
+          <span class="icon"><i class="fab fa-github"></i></span><span>Code</span>
+        </a>
+        <a class="button is-light" href="#videos">
+          <span class="icon"><i class="fa-solid fa-film"></i></span><span>Results</span>
+        </a>
+        <a class="button is-light" href="#act">
+          <span class="icon"><i class="fa-solid fa-scale-balanced"></i></span><span>ACT Baseline</span>
+        </a>
+        <a class="button is-light" href="#objects">
+          <span class="icon"><i class="fa-solid fa-cubes"></i></span><span>Other Objects</span>
+        </a>
+        <a class="button is-light" href="#bibtex">
+          <span class="icon"><i class="fa-solid fa-quote-right"></i></span><span>BibTeX</span>
+        </a>
+      </div>
+
+      <div class="columns is-variable is-6 mt-5">
+        <div class="column is-7">
+          <div class="cardish">
+            <video playsinline autoplay muted loop controls>
+              <source src="assets/videos/stage3_a.mp4" type="video/mp4">
+            </video>
+            <div class="cardish-body">
+              <div class="badge"><i class="fa-solid fa-hand"></i> Stacking 4 states + tactile sensing (demo)</div>
+              <div class="figure-caption">Success video: the policy keeps re‑grasping until the tactile success signal appears.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="column is-5">
+          <div class="cardish mb-5">
+            <img src="assets/images/teaser_1.png" alt="Teaser image 1" style="width:100%; height:auto; display:block;">
+          </div>
+          <div class="cardish">
+            <img src="assets/images/teaser_2.png" alt="Teaser image 2" style="width:100%; height:auto; display:block;">
+          </div>
+          <p class="figure-caption mt-2">Teasers: teleop collection + front & tactile sensor streams.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="section" id="abstract">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3">Contents</h2>
+    <div class="content">
+      <p>We study tactile‑driven re‑grasping: given an initial imperfect grasp, a robot should repeatedly adjust its grasp until it reaches a desired contact configuration.
+We collect teleoperated demonstrations with a front camera and two tactile sensors, encode observations into compact latents, and train an offline RL policy (IQL).
+A simple tactile success signal (“circle” marker visibility on the tactile pad) lets the policy keep trying until it achieves the intended grasp.</p>
+      <p> We also found that collecting high quality data was important for Offline RL. We want the policy to learn a behavior of re-grasping. With only successful grasp without re-grasping data can't train the policy to retry. For that when collecting data, we <b>only relyed on the camera and sensor input not watching the scene directly. So when we couldn't get the successful grasp every first try and that led to regrasping motion during data collection. </b> This helped the policy to learn how to try until it properly grasp the right position. </p>
+    </div>
+
+    <hr class="soft">
+
+    <div class="columns is-variable is-6">
+      <div class="column">
+        <h3 class="title is-5">Tactile success signal (circle)</h3>
+        <div class="content">
+          <p>
+            Each tactile sensor provides an image of the contact patch.
+            We use a simple marker (“circle”) on the tactile pad: when the pen is grasped in the intended contact configuration,
+            the circle becomes visible in the tactile image. We detect this per sensor (left/right) and use it as a success indicator.
+          </p>
+        </div>
+      </div>
+
+      <div class="column">
+        <h3 class="title is-5">What matters</h3>
+        <div class="content">
+          <ul>
+            <li><b>Vision</b> helps reach and stabilize around the object.</li>
+            <li><b>Tactile</b> specifies the desired contact configuration.</li>
+            <li><b>State stacking</b> adds short‑horizon temporal context so the policy can “try again” reliably.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="section" id="videos">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3">Results</h2>
+    <p class="subtitle is-6 has-text-grey">Three stages (two clips each). Click play to compare behaviors.</p>
+
+    <div class="columns is-variable is-6">
+      <div class="column">
+        <div class="cardish">
+          <video controls playsinline loop>
+            <source src="assets/videos/stage1_a.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Stage 1 — No stacking, with tactile sensing</p>
+            <p class="content is-size-6 has-text-grey">
+              Uses tactile observations but without temporal stacking; failed to get close to the pen.
+            </p>
+          </div>
+        </div>
+        <div class="cardish mt-5">
+          <video controls playsinline loop>
+            <source src="assets/videos/stage1_b.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Stage 1 — No stacking, with tactile sensing</p>
+            <p class="content is-size-6 has-text-grey">
+              Uses tactile observations but without temporal stacking; got close the pen but no grasping behavior.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="cardish">
+          <video controls playsinline loop>
+            <source src="assets/videos/stage2_a.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Stage 2 — No stacking, without tactile sensing</p>
+            <p class="content is-size-6 has-text-grey">
+              Vision‑only policy make it stable to reach to pen. Also succeed on grasping but does not re‑attempt on failure.
+            </p>
+          </div>
+        </div>
+        <div class="cardish mt-5">
+          <video controls playsinline loop>
+            <source src="assets/videos/stage2_b.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Stage 2 — No stacking, without tactile sensing</p>
+            <p class="content is-size-6 has-text-grey">
+              Same situation as above; the policy does not re‑attempt on failure.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="cardish">
+          <video controls playsinline loop>
+            <source src="assets/videos/stage3_a.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Stage 3 — Stacking 4 states, with tactile sensing</p>
+            <p class="content is-size-6 has-text-grey">
+              Stacking improves temporal understanding; the policy keeps re‑grasping until tactile success.
+            </p>
+          </div>
+        </div>
+        <div class="cardish mt-5">
+          <video controls playsinline loop>
+            <source src="assets/videos/stage3_b.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Stage 3 — Stacking 4 states, with tactile sensing</p>
+            <p class="content is-size-6 has-text-grey">
+              Stacking improves temporal understanding; the policy grasp properly right away.
+            </p>            
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="soft">
+
+    <h2 class="title is-4">Repository</h2>
+    <div class="content">
+      <p>
+        Code and instructions: <a href="https://github.com/mjkim001130/Feel2Grasp" target="_blank" rel="noopener">https://github.com/mjkim001130/Feel2Grasp</a>
+      </p>
+    </div>
+
+  </div>
+</section>
+
+
+<section class="section" id="act">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3">Baseline Comparison: ACT</h2>
+    <p class="subtitle is-6 has-text-grey">
+      We trained an ACT baseline on the same dataset and task setup. Qualitatively, ACT performs similarly, but our offline RL policy
+      achieves a slightly higher success rate in our runs.
+      <!-- Optional: add numeric success rates here (e.g., RL: XX%, ACT: YY%). -->
+    </p>
+
+    <div class="columns is-variable is-6">
+      <div class="column">
+        <div class="cardish">
+          <video controls playsinline loop>
+            <source src="assets/videos/act_a.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">ACT — clip 1</p>
+            <p class="content is-size-6 has-text-grey">Representative run with ACT.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="cardish">
+          <video controls playsinline loop>
+            <source src="assets/videos/act_b.mp4" type="video/mp4">
+          </video>
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">ACT — clip 2</p>
+            <p class="content is-size-6 has-text-grey">Second representative run.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="soft">
+  </div>
+</section>
+
+<section class="section" id="objects">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3">Other Objects</h2>
+    <p class="subtitle is-6 has-text-grey">
+      We tested the same sensing setup with additional objects to validate that the tactile signal (contact imprint) remains informative beyond a single pen instance.
+    </p>
+
+    <div class="columns is-variable is-6">
+      <div class="column">
+        <div class="cardish">
+          <img src="assets/images/other_objects_1.png" alt="Other objects 1" style="width:100%; height:auto; display:block;">
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Tactile sensor and objects</p>
+            <p class="content is-size-6 has-text-grey">Examples: screw, LEGO brick, key, and their tactile imprints.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="cardish">
+          <img src="assets/images/other_objects_2.png" alt="Other objects 2" style="width:100%; height:auto; display:block;">
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Hardware integration</p>
+            <p class="content is-size-6 has-text-grey">Mounting used for data collection and evaluation.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="cardish">
+          <img src="assets/images/other_objects_3.png" alt="Other objects 3" style="width:100%; height:auto; display:block;">
+          <div class="cardish-body">
+            <p class="title is-6 mb-2">Representative tactile frames</p>
+            <p class="content is-size-6 has-text-grey">Tactile appearance differs by object geometry and grasp configuration.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="bibtex">
+  <div class="container is-max-desktop">
+    <h2 class="title is-3">BibTeX</h2>
+    <!-- <p class="subtitle is-6 has-text-grey">Replace this with your final paper/report citation.</p> -->
+    <pre class="codebox">@misc{feel2grasp2025,
+  title  = {{Feel2Grasp: Tactile‑Conditioned Offline RL for Re‑grasping}},
+  author = {{Kim and Kim and Kim and Baik}},
+  year   = {2025},
+  howpublished = {\url{https://github.com/mjkim001130/Feel2Grasp}},
+}</pre>
+
+    <div class="content mt-4">
+      <!-- <p class="has-text-grey">
+        Tip: if you later have an arXiv link or PDF, add buttons in the header (Paper / arXiv / Dataset).
+      </p> -->
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="content has-text-centered">
+    <p>
+      Built in a Nerfies-style layout. You can host this via GitHub Pages.
+    </p>
+    <p class="has-text-grey is-size-7">
+      © Minjae Kim · Juhyung Kim · Kyoungin Baik. Edit <code>index.html</code> to update authors/affiliations/links.
+    </p>
+  </div>
+</footer>
+
+<script src="assets/js/main.js"></script>
+</body>
+</html>
