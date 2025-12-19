@@ -1,13 +1,49 @@
+<div align="center">
+
 # Feel2Grasp
 
-**Feel2Grasp: Precise Grasp using Tactile Sensors with Offline RL**
+### Tactile-Conditioned Offline RL for Re-grasping
 
-This repository is for **Yonsei MEU6505**.
+[![Project Page](https://img.shields.io/badge/Project-Page-blue?style=for-the-badge&logo=github)](https://mjkim001130.github.io/Feel2Grasp/)
+[![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge)](LICENSE)
+
+**Minjae Kim** · **Kyoungin Baik** · **Juhyung Kim**
+
+*Yonsei University MEU6505*
+
+<br>
+
+<img src="docs/assets/images/teaser_1.png" width="45%" alt="Feel2Grasp Teaser 1"/>
+<img src="docs/assets/images/teaser_2.png" width="45%" alt="Feel2Grasp Teaser 2"/>
+
+<p><i>Teleop collection setup and front camera + tactile sensor streams</i></p>
+
+</div>
+
+---
 
 ## Overview
 
-Feel2Grasp aims to learn precise grasping behaviors using tactile sensors and offline reinforcement learning.
-We also train an AutoEncoder to extract visual features from the front camera images and use them as part of the RL state.
+**Feel2Grasp** aims to learn precise grasping behaviors using **tactile sensors** and **offline reinforcement learning (IQL)**. Given an initial imperfect grasp, the robot learns to repeatedly adjust its grasp until it reaches a desired contact configuration.
+
+### Key Features
+
+- **Tactile-Driven Re-grasping**: Uses tactile sensor feedback to determine grasp success
+- **Offline RL (IQL)**: Trains policies from demonstration data without online interaction
+- **Visual Feature Extraction**: AutoEncoder for compact front camera image representations
+- **Frame Stacking**: Temporal context through 4-frame stacking for better motion understanding
+
+### What Matters
+
+| Component | Role |
+|-----------|------|
+| **Vision** | Helps reach and stabilize around the object |
+| **Tactile** | Specifies the desired contact configuration |
+| **State Stacking** | Adds temporal context for reliable re-grasping |
+
+---
 
 ## Project Structure
 
@@ -23,100 +59,69 @@ Feel2Grasp/
 ├── data/                   # Data files (.npz, .parquet)
 ├── checkpoints/            # Model checkpoints
 ├── outputs/                # Training outputs (ae_out, ae_side_out)
+├── docs/                   # Project page
 └── lerobot/                # LeRobot library
 ```
 
+---
+
 ## Installation
 
-```bash
-conda create -y -n env-name python=3.10
-conda activate env-name
-```
-
-When using `conda`, install `ffmpeg` in your environment:
+### 1. Create Environment
 
 ```bash
+conda create -y -n feel2grasp python=3.10
+conda activate feel2grasp
 conda install ffmpeg -c conda-forge
 ```
 
-### Install LeRobot
+### 2. Install LeRobot
 
-#### From Source
-
-First, clone the repository and navigate into the directory:
-
+**From Source (Recommended):**
 ```bash
 cd lerobot
-```
-
-Then, install the library in editable mode. This is useful if you plan to contribute to the code.
-
-```bash
 pip install -e ".[feetech]"
 ```
 
-### Installation from PyPI
-
-**Core Library:**
-Install the base package with:
-
+**From PyPI:**
 ```bash
 pip install 'lerobot[feetech]'
 ```
 
-### so101
+### 3. SO101 Robot Setup
 
-Follow the official SO-101 setup guide: [setup](https://huggingface.co/docs/lerobot/so101)
+Follow the official guide: [SO-101 Setup](https://huggingface.co/docs/lerobot/so101)
 
 ---
 
-### Train AutoEncoder
-
-This project is based on:
-
-- CUDA 11.8
-- PyTorch 2.6.0
-
-We train an AutoEncoder to extract visual features from the front camera images, which are used in RL states.
-
 ## Usage
 
-### 1. Collect Data with SO101 Robot
-
-Use LeRobot to collect demonstration data:
+### Step 1: Collect Data with SO101 Robot
 
 ```bash
 cd lerobot
 python so101_record.py
 ```
 
-### 2. Train AutoEncoder
+> **Tip**: During data collection, rely only on camera and sensor input (not direct observation). This naturally leads to re-grasping motions that help the policy learn retry behaviors.
 
-Train the autoencoder to extract visual features from front camera images:
+### Step 2: Train AutoEncoder
 
 ```bash
-# Run the Jupyter notebook
 jupyter notebook notebooks/train_AE.ipynb
 ```
 
-The encoder will be saved to `outputs/ae_out/encoder.pt`.
+Output: `outputs/ae_out/encoder.pt`
 
-### 3. Create Replay Buffer
-
-Create a replay buffer from the collected dataset:
+### Step 3: Create Replay Buffer
 
 ```bash
-# Run the Jupyter notebook
 jupyter notebook notebooks/Replay_buffer.ipynb
 ```
 
-### 4. Train IQL Policy
+### Step 4: Train IQL Policy
 
-Train the IQL (Implicit Q-Learning) policy using the replay buffer.
-
-#### Recommended: Frame-Stacked IQL (4 frames)
-
-We recommend using the **frame-stacked version** for better temporal understanding and avoid causal confusion:
+**Recommended: Frame-Stacked IQL (4 frames)**
 
 ```bash
 python scripts/train/train_iql_stacked.py \
@@ -126,11 +131,7 @@ python scripts/train/train_iql_stacked.py \
     --steps 5000000
 ```
 
-Frame stacking concatenates 4 consecutive observations (72D x 4 = 288D), which helps the policy capture motion dynamics.
-
-#### Basic IQL (Single Frame)
-
-For single-frame training:
+**Basic IQL (Single Frame)**
 
 ```bash
 python scripts/train/train_iql.py \
@@ -140,38 +141,91 @@ python scripts/train/train_iql.py \
     --steps 3000000
 ```
 
-**Training Options:**
+<details>
+<summary><b>Training Arguments</b></summary>
+
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--data` | - | Path to replay buffer |
 | `--batch_size` | 256 | Training batch size |
-| `--steps` | 3,000,000 (basic) / 5,000,000 (stacked) | Total training steps |
+| `--steps` | 3M (basic) / 5M (stacked) | Total training steps |
 | `--gamma` | 0.99 | Discount factor |
 | `--tau_expectile` | 0.7 | Expectile for value function |
 | `--beta` | 3.0 | Temperature for AWR |
 | `--save_dir` | `./IQL_checkpoints` | Checkpoint save directory |
-| `--stack_size` | 4 | Number of stacked frames (stacked version only) |
+| `--stack_size` | 4 | Number of stacked frames (stacked only) |
 
-### 5. Evaluate on Robot
+</details>
 
-Run the trained policy on the SO101 robot:
-
-```bash
-python scripts/eval/so101_iql_eval_smooth.py
-```
+### Step 5: Evaluate on Robot
 
 ```bash
 python scripts/eval/so101_iql_eval_smooth.py
 ```
 
-Before running, update the checkpoint paths in the script:
+Before running, update the checkpoint paths:
 ```python
 IQL_CHECKPOINT_PATH = "checkpoints/iql_step_xxx.pt"
 ENCODER_CHECKPOINT_PATH = "outputs/ae_out/encoder.pt"
 ```
 
-**Evaluation Options (in script):**
-- `NUM_EPISODES`: Number of evaluation episodes
-- `FPS`: Control frequency (default: 25)
-- `MAX_JOINT_SPEED`: Maximum joint speed for smooth motion
-- `SAVE_DATASET`: Whether to save evaluation data
+<details>
+<summary><b>Evaluation Options</b></summary>
+
+| Option | Description |
+|--------|-------------|
+| `NUM_EPISODES` | Number of evaluation episodes |
+| `FPS` | Control frequency (default: 25) |
+| `MAX_JOINT_SPEED` | Maximum joint speed for smooth motion |
+| `SAVE_DATASET` | Whether to save evaluation data |
+
+</details>
+
+---
+
+## Results
+
+Our experiments show that **state stacking with tactile sensing** achieves the best performance:
+
+| Stage | Configuration | Result |
+|-------|---------------|--------|
+| 1 | No stacking + Tactile | Failed to approach or grasp |
+| 2 | No stacking + Vision only | Grasps but doesn't re-attempt |
+| 3 | **4-frame stacking + Tactile** | **Re-grasps until success** |
+
+For detailed results and videos, visit our [Project Page](https://mjkim001130.github.io/Feel2Grasp/).
+
+---
+
+## Requirements
+
+- CUDA 11.8
+- PyTorch 2.6.0
+- Python 3.10
+
+---
+
+## Citation
+
+```bibtex
+@misc{feel2grasp2025,
+  title  = {Feel2Grasp: Tactile-Conditioned Offline RL for Re-grasping},
+  author = {Kim, Minjae and Baik, Kyoungin and Kim, Juhyung},
+  year   = {2025},
+  howpublished = {\url{https://github.com/mjkim001130/Feel2Grasp}},
+}
+```
+
+---
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**[Project Page](https://mjkim001130.github.io/Feel2Grasp/)** · **[Issues](https://github.com/mjkim001130/Feel2Grasp/issues)**
+
+</div>
